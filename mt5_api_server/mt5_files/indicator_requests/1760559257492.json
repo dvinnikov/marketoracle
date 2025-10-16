@@ -1,0 +1,1 @@
+{"request_id": "1760559257492", "symbol": "EURUSD", "timeframe": "M30", "lookback": 300, "indicators": [{"name": "RSI", "period": 14}, {"name": "EMA", "period": 21}, {"name": "MACD", "fast": 12, "slow": 26, "signal": 9}], "created_at": "2025-10-15T20:14:17.492929+00:00"}

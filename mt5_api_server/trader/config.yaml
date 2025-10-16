@@ -1,0 +1,24 @@
+server:
+  base_http: "http://localhost:8000"
+  base_ws:   "ws://localhost:8000"
+
+symbols:
+  - EURUSD
+timeframe: M1
+
+risk:
+  max_risk_pct: 1.0
+  risk_per_trade_pct: 0.5
+
+strategies:
+  ema_cross:
+    fast: 21
+    slow: 55
+  range_fade:
+    lookback: 60
+    z: 1.8
+  turtle_dennis:          # ← new
+    entry_channel: 55     # classic S2 entry
+    exit_channel: 20      # informational in this version
+    atr_period: 20
+    atr_mult: 2.0

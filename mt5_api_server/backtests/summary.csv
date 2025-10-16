@@ -1,0 +1,4 @@
+symbol,strategy,final_equity,trades,win_rate_pct,max_drawdown,sharpe_like,equity_csv,trades_csv
+EURUSD,ema_cross,5846.27,105,31.43,4175.86,-38.22,backtests\equity_EURUSD_ema_cross.csv,backtests\trades_EURUSD_ema_cross.csv
+EURUSD,range_fade,500.94,773,37.13,9501.88,-124.143,backtests\equity_EURUSD_range_fade.csv,backtests\trades_EURUSD_range_fade.csv
+EURUSD,turtle_dennis,7226.81,55,25.45,2823.25,-33.373,backtests\equity_EURUSD_turtle_dennis.csv,backtests\trades_EURUSD_turtle_dennis.csv

@@ -1,6 +1,8 @@
 # server.py
 from __future__ import annotations
-
+from datetime import datetime, timezone, timedelta
+import time
+from fastapi import WebSocket, WebSocketDisconnect
 import asyncio
 import json
 import os
@@ -484,31 +486,106 @@ hub = Hub()
 
 
 @app.websocket("/stream/candles")
-async def stream_candles(ws: WebSocket, symbol: str, timeframe: str = "M1"):
-    await hub.connect(ws)
-    try:
-        tf = TF_MAP.get(timeframe.upper(), mt5.TIMEFRAME_M1)
-        if not mt5.symbol_select(symbol, True):
-            await ws.send_text(json.dumps({"type": "error", "message": f"Cannot select {symbol}"}))
-            return
+async def stream_candles(ws: WebSocket, symbol: str, timeframe: str = "M1", throttle_ms: int = 20):
+    await ws.accept()
 
-        last_time = 0
+    TF_SECONDS = {
+        "M1": 60, "M5": 300, "M15": 900, "M30": 1800,
+        "H1": 3600, "H4": 14400, "D1": 86400, "W1": 604800, "MN1": 2592000,
+    }
+    step = TF_SECONDS.get(timeframe.upper(), 60)
+    tf = TF_MAP.get(timeframe.upper(), mt5.TIMEFRAME_M1)
+
+    if not mt5.symbol_select(symbol, True):
+        await ws.send_text(json.dumps({"type": "error", "message": f"Cannot select {symbol}"}))
+        return
+
+    # Seed current bar from MT5
+    rates = mt5.copy_rates_from_pos(symbol, tf, 0, 1)
+    if not rates or len(rates) == 0:
+        await ws.send_text(json.dumps({"type": "error", "message": "No rates"}))
+        return
+
+    seed = _rate_to_dict(rates[0])
+    cur_bar = {
+        "time": int(seed["time"]),              # bar open, seconds
+        "open": float(seed["open"]),
+        "high": float(seed["high"]),
+        "low":  float(seed["low"]),
+        "close": float(seed["close"]),
+    }
+    last_sent_close = cur_bar["close"]
+
+    # ---- Millisecond cursor (DON'T use seconds) ----
+    # start slightly in the past so we don't miss first ticks
+    last_msc = int(time.time() * 1000) - 1500
+
+    def price_from_tick(t):
+        # prefer trade last; else mid of bid/ask
+        try:
+            last = float(getattr(t, "last", 0.0))
+            if last > 0:
+                return last
+        except Exception:
+            pass
+        bid = float(getattr(t, "bid", 0.0) or 0.0)
+        ask = float(getattr(t, "ask", 0.0) or 0.0)
+        if bid > 0 and ask > 0:
+            return (bid + ask) / 2.0
+        return ask or bid or cur_bar["close"]
+
+    try:
         while True:
-            rates = mt5.copy_rates_from_pos(symbol, tf, 0, 1)
-            if rates is not None and len(rates) > 0:
-                row = rates[0]
-                t = int(_rate_field(row, "time"))
-                if t != last_time:
-                    last_time = t
-                    bar = _rate_to_dict(row)
-                    await ws.send_text(json.dumps({
-                        "type": "tick",
-                        "symbol": symbol,
-                        "timeframe": timeframe,
-                        "bar": bar
-                    }))
-            await asyncio.sleep(1.0)
+            # Build datetime from milliseconds; subtract 1 ms to include boundary tick
+            start_dt = datetime.fromtimestamp(max(last_msc - 1, 0) / 1000.0, tz=timezone.utc)
+            ticks = mt5.copy_ticks_from(symbol, start_dt, 4096, mt5.COPY_TICKS_ALL)
+
+            if ticks is not None and len(ticks) > 0:
+                for t in ticks:
+                    # read both second and millisecond fields safely
+                    sec = int(_rate_field(t, "time"))
+                    msc = int(_rate_field(t, "time_msc"))  # ms since epoch
+                    if msc <= last_msc:
+                        continue
+                    last_msc = msc
+
+                    px = price_from_tick(t)
+                    bar_start = (sec // step) * step
+
+                    # roll to a new bar if needed
+                    if bar_start > cur_bar["time"]:
+                        prev_close = cur_bar["close"]
+                        cur_bar = {
+                            "time": bar_start,
+                            "open": prev_close,
+                            "high": prev_close,
+                            "low":  prev_close,
+                            "close": prev_close,
+                        }
+
+                    # update OHLC on EVERY tick
+                    if px > cur_bar["high"]:
+                        cur_bar["high"] = px
+                    if px < cur_bar["low"]:
+                        cur_bar["low"] = px
+                    cur_bar["close"] = px
+
+                    # emit every change (or remove this check to emit every tick unconditionally)
+                    if cur_bar["close"] != last_sent_close:
+                        last_sent_close = cur_bar["close"]
+                        await ws.send_text(json.dumps({
+                            "type": "tick",
+                            "symbol": symbol,
+                            "timeframe": timeframe,
+                            "bar": cur_bar
+                        }))
+
+            await asyncio.sleep(throttle_ms / 1000.0)
+
     except WebSocketDisconnect:
         pass
     finally:
-        hub.disconnect(ws)
+        try:
+            await ws.close()
+        except Exception:
+            pass

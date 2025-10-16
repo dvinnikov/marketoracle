@@ -2,6 +2,8 @@ import { useEffect, useState, useMemo } from "react";
 import "./styles/index.css";
 import TopBar from "./components/TopBar";
 import { getHealth, getAccount, getSymbols, getCandles } from "./lib/api";
+import ChartPane from "./features/chart/ChartPane.jsx";
+
 
 export default function App() {
   const [health, setHealth] = useState(null);
@@ -85,11 +87,11 @@ export default function App() {
         </div>
       </div>
 
-      <div className="row">
-        <div className="card" style={{gridColumn:"span 12", color:"var(--muted)"}}>
-          Placeholders ready: ChartPane, IndicatorsCard, OrdersPanel, Tables.
-        </div>
+    <div className="row">
+      <div style={{gridColumn:"span 12"}}>
+        <ChartPane symbol={symbol} timeframe={tf} />
       </div>
+    </div>
     </div>
   );
 }

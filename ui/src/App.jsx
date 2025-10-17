@@ -1,38 +1,23 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState } from "react";
 import "./styles/index.css";
 import TopBar from "./components/TopBar";
-import { getHealth, getAccount, getSymbols, getCandles } from "./lib/api";
+import { getHealth, getAccount } from "./lib/api";
 import ChartPane from "./features/chart/ChartPane.jsx";
 
 
 export default function App() {
   const [health, setHealth] = useState(null);
   const [account, setAccount] = useState(null);
-  const [symbols, setSymbols] = useState([]);
-  const [symbol, setSymbol]   = useState("EURUSD");
-  const [tf, setTf]           = useState("M1");
-  const [probe, setProbe]     = useState(null);
-  const [loading, setLoading] = useState(false);
-  const tfs = useMemo(()=>["M1","M5","M15","M30","H1","H4","D1"],[]);
 
   useEffect(()=>{
     (async ()=>{
       try {
-        const [h,a,s] = await Promise.all([getHealth(), getAccount(), getSymbols(500)]);
-        setHealth(h); setAccount(a); setSymbols(s.symbols||[]);
+        const [h,a] = await Promise.all([getHealth(), getAccount()]);
+        setHealth(h);
+        setAccount(a);
       } catch(e){ console.error(e); }
     })();
   },[]);
-
-  async function fetchCandles(){
-    setLoading(true);
-    try {
-      const data = await getCandles(symbol, tf, 400);
-      const last = data.candles?.at(-1);
-      setProbe({ count:data.candles?.length||0, lastClose:last?.close, lastTime:last?.time });
-    } catch(e){ alert(e.message); }
-    finally{ setLoading(false); }
-  }
 
   return (
     <div className="app">
@@ -54,44 +39,13 @@ export default function App() {
             </div>
           ) : <div style={{color:"var(--muted)"}}>Loading…</div>}
         </div>
+      </div>
 
-        <div className="card" style={{gridColumn:"span 8"}}>
-          <b>Quick Candles Probe</b>
-          <div className="hr"/>
-          <div className="row">
-            <div style={{gridColumn:"span 6"}}>
-              <label className="label">Symbol</label>
-              <select className="sel" value={symbol} onChange={e=>setSymbol(e.target.value)}>
-                {symbols.map(s=> <option key={s.name} value={s.name}>{s.name} — {s.description}</option>)}
-              </select>
-            </div>
-            <div style={{gridColumn:"span 3"}}>
-              <label className="label">Timeframe</label>
-              <select className="sel" value={tf} onChange={e=>setTf(e.target.value)}>
-                {tfs.map(x=> <option key={x} value={x}>{x}</option>)}
-              </select>
-            </div>
-            <div style={{gridColumn:"span 3", display:"flex", alignItems:"end"}}>
-              <button className="btn" onClick={fetchCandles} disabled={loading}>
-                {loading ? "Loading…" : "Fetch 400 bars"}
-              </button>
-            </div>
-          </div>
-          {probe && (
-            <div style={{marginTop:12, fontSize:14, color:"var(--muted)"}}>
-              Bars: <b style={{color:"var(--text)"}}>{probe.count}</b> •
-              &nbsp;Last close: <b style={{color:"var(--text)"}}>{probe.lastClose}</b> •
-              &nbsp;Last time: <b style={{color:"var(--text)"}}>{probe.lastTime}</b>
-            </div>
-          )}
+      <div className="row">
+        <div style={{gridColumn:"span 12"}}>
+          <ChartPane />
         </div>
       </div>
-
-    <div className="row">
-      <div style={{gridColumn:"span 12"}}>
-        <ChartPane symbol={symbol} timeframe={tf} />
-      </div>
-    </div>
     </div>
   );
 }

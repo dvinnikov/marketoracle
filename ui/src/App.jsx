@@ -1,97 +1,120 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import "./styles/index.css";
 import TopBar from "./components/TopBar";
-import { getHealth, getAccount, getSymbols, getCandles } from "./lib/api";
+import { getAccount, getHealth, getSymbols } from "./lib/api";
 import ChartPane from "./features/chart/ChartPane.jsx";
+import AutoTrader from "./features/autotrade/AutoTrader.jsx";
+import IndicatorsCard from "./features/indicators/IndicatorsCard.jsx";
+import OrdersPanel from "./features/orders/OrdersPanel.jsx";
+import Tables from "./features/tables/Tables.jsx";
 
+const DEFAULT_SYMBOL = "EURUSD";
+const DEFAULT_TIMEFRAME = "M1";
 
 export default function App() {
   const [health, setHealth] = useState(null);
   const [account, setAccount] = useState(null);
   const [symbols, setSymbols] = useState([]);
-  const [symbol, setSymbol]   = useState("EURUSD");
-  const [tf, setTf]           = useState("M1");
-  const [probe, setProbe]     = useState(null);
-  const [loading, setLoading] = useState(false);
-  const tfs = useMemo(()=>["M1","M5","M15","M30","H1","H4","D1"],[]);
+  const [selectedSymbol, setSelectedSymbol] = useState(DEFAULT_SYMBOL);
+  const [selectedTimeframe, setSelectedTimeframe] = useState(DEFAULT_TIMEFRAME);
 
-  useEffect(()=>{
-    (async ()=>{
+  useEffect(() => {
+    (async () => {
       try {
-        const [h,a,s] = await Promise.all([getHealth(), getAccount(), getSymbols(500)]);
-        setHealth(h); setAccount(a); setSymbols(s.symbols||[]);
-      } catch(e){ console.error(e); }
+        const [h, a] = await Promise.all([getHealth(), getAccount()]);
+        setHealth(h);
+        setAccount(a);
+      } catch (e) {
+        console.error(e);
+      }
     })();
-  },[]);
+  }, []);
 
-  async function fetchCandles(){
-    setLoading(true);
-    try {
-      const data = await getCandles(symbol, tf, 400);
-      const last = data.candles?.at(-1);
-      setProbe({ count:data.candles?.length||0, lastClose:last?.close, lastTime:last?.time });
-    } catch(e){ alert(e.message); }
-    finally{ setLoading(false); }
-  }
+  useEffect(() => {
+    (async () => {
+      try {
+        const resp = await getSymbols(200);
+        const list = resp?.symbols ?? [];
+        setSymbols(list);
+      } catch (e) {
+        console.error("symbols", e);
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!symbols?.length) return;
+    const match = symbols.find((s) => s.name === selectedSymbol);
+    if (!match) {
+      setSelectedSymbol(symbols[0]?.name ?? DEFAULT_SYMBOL);
+    }
+  }, [symbols, selectedSymbol]);
+
+  const accountFields = useMemo(() => ({
+    login: account?.login ?? "—",
+    name: account?.name ?? "—",
+    server: account?.server ?? "—",
+    currency: account?.currency ?? "—",
+    balance: account?.balance ?? 0,
+    equity: account?.equity ?? 0,
+    free_margin: account?.free_margin ?? 0,
+    company: account?.company ?? "",
+  }), [account]);
 
   return (
     <div className="app">
       <TopBar health={health} />
 
-      <div className="row" style={{marginBottom:16}}>
-        <div className="card" style={{gridColumn:"span 4"}}>
+      <div className="row" style={{ marginBottom: 16 }}>
+        <div className="card" style={{ gridColumn: "span 4" }}>
           <b>Account</b>
-          <div className="hr"/>
+          <div className="hr" />
           {account ? (
             <div className="kv">
-              <div>Login</div><div>{account.login??"—"}</div>
-              <div>Name</div><div>{account.name??"—"}</div>
-              <div>Server</div><div>{account.server??"—"}</div>
-              <div>Currency</div><div>{account.currency??"—"}</div>
-              <div>Balance</div><div>{account.balance?.toFixed?.(2)??"0.00"}</div>
-              <div>Equity</div><div>{account.equity?.toFixed?.(2)??"0.00"}</div>
-              <div>Free Margin</div><div>{account.free_margin?.toFixed?.(2)??"0.00"}</div>
+              <div>Login</div><div>{accountFields.login}</div>
+              <div>Name</div><div>{accountFields.name}</div>
+              <div>Server</div><div>{accountFields.server}</div>
+              <div>Broker</div><div>{accountFields.company || "—"}</div>
+              <div>Currency</div><div>{accountFields.currency}</div>
+              <div>Balance</div><div>{accountFields.balance.toFixed(2)}</div>
+              <div>Equity</div><div>{accountFields.equity.toFixed(2)}</div>
+              <div>Free Margin</div><div>{accountFields.free_margin.toFixed(2)}</div>
             </div>
-          ) : <div style={{color:"var(--muted)"}}>Loading…</div>}
-        </div>
-
-        <div className="card" style={{gridColumn:"span 8"}}>
-          <b>Quick Candles Probe</b>
-          <div className="hr"/>
-          <div className="row">
-            <div style={{gridColumn:"span 6"}}>
-              <label className="label">Symbol</label>
-              <select className="sel" value={symbol} onChange={e=>setSymbol(e.target.value)}>
-                {symbols.map(s=> <option key={s.name} value={s.name}>{s.name} — {s.description}</option>)}
-              </select>
-            </div>
-            <div style={{gridColumn:"span 3"}}>
-              <label className="label">Timeframe</label>
-              <select className="sel" value={tf} onChange={e=>setTf(e.target.value)}>
-                {tfs.map(x=> <option key={x} value={x}>{x}</option>)}
-              </select>
-            </div>
-            <div style={{gridColumn:"span 3", display:"flex", alignItems:"end"}}>
-              <button className="btn" onClick={fetchCandles} disabled={loading}>
-                {loading ? "Loading…" : "Fetch 400 bars"}
-              </button>
-            </div>
-          </div>
-          {probe && (
-            <div style={{marginTop:12, fontSize:14, color:"var(--muted)"}}>
-              Bars: <b style={{color:"var(--text)"}}>{probe.count}</b> •
-              &nbsp;Last close: <b style={{color:"var(--text)"}}>{probe.lastClose}</b> •
-              &nbsp;Last time: <b style={{color:"var(--text)"}}>{probe.lastTime}</b>
-            </div>
+          ) : (
+            <div style={{ color: "var(--muted)" }}>Loading…</div>
           )}
         </div>
+        <div style={{ gridColumn: "span 8" }}>
+          <AutoTrader
+            symbols={symbols}
+            symbol={selectedSymbol}
+            timeframe={selectedTimeframe}
+            onSymbolChange={setSelectedSymbol}
+            onTimeframeChange={setSelectedTimeframe}
+          />
+        </div>
       </div>
 
-    <div className="row">
-      <div style={{gridColumn:"span 12"}}>
-        <ChartPane symbol={symbol} timeframe={tf} />
+      <div className="row" style={{ marginBottom: 16 }}>
+        <div style={{ gridColumn: "span 6" }}>
+          <IndicatorsCard symbols={symbols} defaultSymbol={selectedSymbol} defaultTimeframe={selectedTimeframe} />
+        </div>
+        <div style={{ gridColumn: "span 6" }}>
+          <OrdersPanel symbols={symbols} defaultSymbol={selectedSymbol} />
+        </div>
       </div>
-    </div>
+
+      <div className="row" style={{ marginBottom: 16 }}>
+        <div style={{ gridColumn: "span 12" }}>
+          <Tables symbols={symbols} />
+        </div>
+      </div>
+
+      <div className="row" style={{ marginBottom: 16 }}>
+        <div style={{ gridColumn: "span 12" }}>
+          <ChartPane symbol={selectedSymbol} timeframe={selectedTimeframe} />
+        </div>
+      </div>
     </div>
   );
 }

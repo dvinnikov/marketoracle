@@ -17,6 +17,8 @@ strategies:
   range_fade:
     lookback: 60
     z: 1.8
+  oco_breakout:
+    lookback: 30
   turtle_dennis:          # ← new
     entry_channel: 55     # classic S2 entry
     exit_channel: 20      # informational in this version

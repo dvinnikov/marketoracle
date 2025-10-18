@@ -1,6 +1,7 @@
 // src/features/chart/TVChart.tsx
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { wsUrl, getCandles } from "../../lib/api";
+import type { StrategyLevel } from "../../lib/api";
 
 declare global {
   interface Window { TradingView?: any }
@@ -10,6 +11,7 @@ type Props = {
   symbol?: string;
   timeframe?: string; // your server style e.g. "M1","M5","H1","D1"
   height?: number;
+  levels?: StrategyLevel[];
 };
 
 // --- Resolution mapping (TV <-> server) ------------------------------
@@ -68,11 +70,12 @@ const ensureTvScript = async (): Promise<void> => {
   });
 };
 
-export default function TVChart({ symbol = "EURUSD", timeframe = "M1", height = 520 }: Props) {
+export default function TVChart({ symbol = "EURUSD", timeframe = "M1", height = 520, levels = [] }: Props) {
   const containerId = "tvchart-container";
   const containerRef = useRef<HTMLDivElement | null>(null);
   const widgetRef = useRef<any>(null);
   const subRef = useRef<{ ws?: WebSocket; uid?: string } | null>(null);
+  const levelLinesRef = useRef<any[]>([]);
 
   const tvSymbol = useMemo(() => String(symbol), [symbol]);
   const initialInterval = useMemo(() => serverTFToTv(timeframe), [timeframe]);
@@ -225,10 +228,67 @@ export default function TVChart({ symbol = "EURUSD", timeframe = "M1", height = 
       cancelled = true;
       try { subRef.current?.ws?.close(); } catch {}
       subRef.current = null;
+      levelLinesRef.current.forEach((line) => {
+        try { line.remove(); } catch {}
+      });
+      levelLinesRef.current = [];
       try { widgetRef.current?.remove?.(); } catch {}
       widgetRef.current = null;
     };
   }, [tvSymbol, initialInterval]);
+
+  useEffect(() => {
+    const widget = widgetRef.current;
+    if (!widget) return;
+
+    const applyLevels = () => {
+      const chart = widget.chart?.();
+      if (!chart?.createOrderLine) return;
+
+      levelLinesRef.current.forEach((line) => {
+        try { line.remove(); } catch {}
+      });
+      levelLinesRef.current = [];
+
+      (levels || []).forEach((lvl) => {
+        const entryLine = chart.createOrderLine();
+        entryLine.setPrice(lvl.entry);
+        entryLine.setText(`${lvl.strategy} entry`);
+        entryLine.setBodyText(`${lvl.strategy.toUpperCase()} ${lvl.side} @ ${lvl.entry.toFixed(5)}`);
+        entryLine.setLineColor(lvl.side === "BUY" ? "#10b981" : "#ef4444");
+        entryLine.setExtendLeft(true);
+        entryLine.setExtendRight(true);
+        levelLinesRef.current.push(entryLine);
+
+        const stopLine = chart.createOrderLine();
+        stopLine.setPrice(lvl.stop);
+        stopLine.setText(`${lvl.strategy} SL`);
+        stopLine.setBodyText(`SL @ ${lvl.stop.toFixed(5)}`);
+        stopLine.setLineColor("#f97316");
+        stopLine.setLineStyle(2);
+        stopLine.setExtendLeft(true);
+        stopLine.setExtendRight(true);
+        levelLinesRef.current.push(stopLine);
+
+        const targetLine = chart.createOrderLine();
+        targetLine.setPrice(lvl.target);
+        targetLine.setText(`${lvl.strategy} TP`);
+        targetLine.setBodyText(`TP @ ${lvl.target.toFixed(5)}`);
+        targetLine.setLineColor("#38bdf8");
+        targetLine.setLineStyle(2);
+        targetLine.setExtendLeft(true);
+        targetLine.setExtendRight(true);
+        levelLinesRef.current.push(targetLine);
+      });
+    };
+
+    const chart = widget.chart?.();
+    if (chart?.createOrderLine) {
+      applyLevels();
+    } else {
+      widget.onChartReady?.(() => applyLevels());
+    }
+  }, [levels, tvSymbol]);
 
   return (
     <div

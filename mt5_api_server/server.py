@@ -4,14 +4,20 @@ from datetime import datetime, timezone, timedelta
 import time
 from fastapi import WebSocket, WebSocketDisconnect
 import asyncio
+from datetime import datetime, timedelta, timezone
 import json
 import os
+from pathlib import Path
+import time
 from typing import Any, Dict, List, Optional, Literal
 
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 import MetaTrader5 as mt5
+import yaml
+
+from trader.core.selection import StrategySelectionStore
 
 
 # -------------------------
@@ -27,6 +33,43 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# -------------------------
+# Shared file locations
+# -------------------------
+BASE_DIR = Path(__file__).resolve().parent
+TRADER_DIR = BASE_DIR / "trader"
+LOG_DIR = TRADER_DIR / "logs"
+SIGNAL_STATE_PATH = LOG_DIR / "signals_state.json"
+LEVELS_PATH = LOG_DIR / "levels.json"
+SELECTION_PATH = LOG_DIR / "strategy_selection.json"
+CONFIG_PATH = TRADER_DIR / "config.yaml"
+
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _read_json(path: Path) -> Dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _load_trader_config() -> Dict[str, Any]:
+    if CONFIG_PATH.exists():
+        try:
+            return yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8")) or {}
+        except Exception:
+            return {}
+    return {}
+
+
+def _load_selection() -> List[str]:
+    data = _read_json(SELECTION_PATH)
+    return [str(x) for x in data.get("strategies", [])]
 
 
 # -------------------------
@@ -199,6 +242,10 @@ class MarketOrderReq(BaseModel):
     filling: Optional[int] = None
 
 
+class StrategySelectionRequest(BaseModel):
+    strategies: List[str]
+
+
 class IndicatorReq(BaseModel):
     symbol: str
     timeframe: str = "M30"
@@ -276,6 +323,50 @@ def candles(symbol: str, timeframe: str = Query("M1"), limit: int = Query(1000, 
     out = [_rate_to_dict(r) for r in rates]
     out.sort(key=lambda x: x["time"])  # ensure ascending
     return {"symbol": symbol, "timeframe": timeframe, "candles": out}
+
+
+@app.get("/strategy/catalog")
+def strategy_catalog():
+    cfg = _load_trader_config()
+    selection = set(_load_selection())
+    fallback_enabled = not selection
+    strategies = []
+    for name, params in (cfg.get("strategies") or {}).items():
+        strategies.append({
+            "name": name,
+            "params": params,
+            "enabled": fallback_enabled or name in selection,
+        })
+    return {"strategies": strategies}
+
+
+@app.get("/strategy/selection")
+def get_strategy_selection():
+    return {"strategies": _load_selection()}
+
+
+@app.post("/strategy/selection")
+def set_strategy_selection(req: StrategySelectionRequest):
+    store = StrategySelectionStore(SELECTION_PATH)
+    store.set(req.strategies)
+    return {"ok": True, "strategies": store.all()}
+
+
+@app.get("/strategy/signals")
+def get_strategy_signals(limit: int = 200, status: Optional[str] = None):
+    data = _read_json(SIGNAL_STATE_PATH).get("signals", [])
+    if status:
+        data = [d for d in data if d.get("status") == status]
+    return {"signals": data[-limit:]}
+
+
+@app.get("/strategy/levels")
+def get_strategy_levels(symbol: Optional[str] = None):
+    payload = _read_json(LEVELS_PATH)
+    levels = payload.get("levels", [])
+    if symbol:
+        levels = [lvl for lvl in levels if lvl.get("symbol") == symbol]
+    return {"levels": levels, "generated_at": payload.get("generated_at")}
 
 
 @app.post("/indicators/run")

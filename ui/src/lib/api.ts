@@ -58,3 +58,66 @@ type CandlesResponse = {
 export const getCandles = (symbol: string, timeframe: string, limit = 1000): Promise<CandlesResponse> =>
   request(`/candles/${encodeURIComponent(symbol)}?timeframe=${encodeURIComponent(timeframe)}&limit=${limit}`);
 
+export type StrategyDefinition = {
+  name: string;
+  params: Record<string, unknown>;
+  enabled: boolean;
+};
+
+export type StrategyCatalogResponse = { strategies: StrategyDefinition[] };
+
+export const getStrategyCatalog = (): Promise<StrategyCatalogResponse> => request("/strategy/catalog");
+
+export const getStrategySelection = (): Promise<{ strategies: string[] }> => request("/strategy/selection");
+
+export const updateStrategySelection = (strategies: string[]): Promise<{ ok: boolean; strategies: string[] }> =>
+  request("/strategy/selection", {
+    method: "POST",
+    body: JSON.stringify({ strategies }),
+  });
+
+export type StrategySignal = {
+  id: string;
+  symbol: string;
+  timeframe: string;
+  strategy: string;
+  side: string;
+  reason: string;
+  entry_price: number;
+  stop_loss: number;
+  take_profit: number;
+  pivot?: number | null;
+  qty: number;
+  opened_at: number;
+  status: string;
+  closed_at?: number | null;
+  exit_price?: number | null;
+  outcome?: string | null;
+  pnl?: number | null;
+};
+
+export const getStrategySignals = (
+  limit = 200,
+  status?: "open" | "closed"
+): Promise<{ signals: StrategySignal[] }> => {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (status) params.set("status", status);
+  return request(`/strategy/signals?${params.toString()}`);
+};
+
+export type StrategyLevel = {
+  id: string;
+  symbol: string;
+  strategy: string;
+  side: string;
+  entry: number;
+  stop: number;
+  target: number;
+  pivot?: number | null;
+};
+
+export const getStrategyLevels = (symbol?: string): Promise<{ levels: StrategyLevel[]; generated_at?: number }> => {
+  const params = symbol ? `?symbol=${encodeURIComponent(symbol)}` : "";
+  return request(`/strategy/levels${params}`);
+};
+

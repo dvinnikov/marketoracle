@@ -4,6 +4,7 @@ import TVChart from "./TVChart";
 export default function ChartPane({
   symbol,
   timeframe,
+  levels = [],
   height = 420,
 }) {
   // Safe defaults so first render never explodes
@@ -18,7 +19,7 @@ export default function ChartPane({
 
       {/* TradingView widget handles history + realtime via its Datafeed */}
       <div style={{ height }}>
-        <TVChart symbol={sym} timeframe={tf} height={height} />
+        <TVChart symbol={sym} timeframe={tf} height={height} levels={levels} />
       </div>
     </section>
   );

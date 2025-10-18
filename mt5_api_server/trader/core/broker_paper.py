@@ -22,16 +22,15 @@ class PaperBroker:
         pos=self.pos.get(order.symbol, Position())
         if order.side==Side.BUY:
             cost=order.qty*mkt_price+fee
-            if self.cash<cost: return {"accepted":False,"reason":"insufficient_cash"}
+            if self.cash<cost:
+                return {"accepted":False,"reason":"insufficient_cash"}
             self.cash-=cost
-            new_qty=pos.qty+order.qty
-            pos.avg = (pos.avg*pos.qty + order.qty*mkt_price)/new_qty if new_qty!=0 else 0
-            pos.qty=new_qty
-        elif order.side==Side.SELL:
-            if pos.qty<order.qty: return {"accepted":False,"reason":"short_not_allowed"}
+            pos.qty += order.qty
+            pos.avg = mkt_price if pos.qty!=0 else 0
+        else:  # SELL (allow short)
             proceeds=order.qty*mkt_price-fee
             self.cash+=proceeds
-            pos.qty-=order.qty
-            if pos.qty==0: pos.avg=0
+            pos.qty -= order.qty
+            pos.avg = mkt_price if pos.qty!=0 else 0
         self.pos[order.symbol]=pos
         return {"accepted":True,"fill_price":mkt_price,"fee":fee,"cash":self.cash,"pos":pos}
